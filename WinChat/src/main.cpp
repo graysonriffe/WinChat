@@ -11,8 +11,8 @@ int main(int argc, char* argv[]) {
 
 	{
 		wc::Application app(appName, appVer);
+		app.run();
 	}
 
-	std::cin.get();
 	return EXIT_SUCCESS;
 }
