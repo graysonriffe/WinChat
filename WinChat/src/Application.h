@@ -12,9 +12,10 @@ namespace wc {
 
 		~Application();
 	private:
+
 		static BOOL CALLBACK dlgProc(HWND dlg, UINT msg, WPARAM wParam, LPARAM lParam);
 
-		const std::string m_appName;
-		const std::string m_appVersion;
+		const std::wstring m_appName;
+		const std::wstring m_appVersion;
 	};
 }
