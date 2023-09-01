@@ -32,6 +32,7 @@ namespace wc {
 				app = reinterpret_cast<Application*>(lParam);
 
 				SetWindowText(dlg, app->m_appName.c_str());
+				SendMessage(dlg, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_ICONMAIN))));
 
 				POINT pt = { };
 				GetCursorPos(&pt);
