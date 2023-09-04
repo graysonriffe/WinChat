@@ -21,10 +21,10 @@ namespace wc {
 	}
 
 	void Application::run() {
-		DialogBoxParam(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_DIALOGMAIN), nullptr, (DLGPROC)dlgProc, reinterpret_cast<LPARAM>(this));
+		DialogBoxParam(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_DIALOGMAIN), nullptr, (DLGPROC)mainDlgProc, reinterpret_cast<LPARAM>(this));
 	}
 
-	BOOL CALLBACK Application::dlgProc(HWND dlg, UINT msg, WPARAM wParam, LPARAM lParam) {
+	BOOL CALLBACK Application::mainDlgProc(HWND dlg, UINT msg, WPARAM wParam, LPARAM lParam) {
 		static Application* app = nullptr;
 
 		switch (msg) {
@@ -47,7 +47,10 @@ namespace wc {
 				HFONT font = CreateFontIndirect(&lFont);
 				SendMessage(GetDlgItem(dlg, IDC_STATICTITLE), WM_SETFONT, reinterpret_cast<LPARAM>(font), NULL);
 
+				SetDlgItemText(dlg, IDC_STATICDESC, L"A simple Windows chat app");
+
 				SendDlgItemMessage(dlg, IDC_EDITADDRESS, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"Address"));
+				SendDlgItemMessage(dlg, IDC_EDITSCREENNAME, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"User"));
 				return TRUE;
 			}
 
@@ -55,9 +58,12 @@ namespace wc {
 				switch (LOWORD(wParam)) {
 					case IDC_BUTTONCONNECT: {
 						std::wstring address;
-						address.resize(GetWindowTextLength(GetDlgItem(dlg, IDC_EDITADDRESS)) + 1);
-						GetDlgItemText(dlg, IDC_EDITADDRESS, address.data(), static_cast<int>(address.size()));
-						MessageBox(dlg, std::format(L"Address: {}", address).c_str(), L"Alert", MB_OK);
+						address.resize(GetWindowTextLength(GetDlgItem(dlg, IDC_EDITADDRESS)));
+						GetDlgItemText(dlg, IDC_EDITADDRESS, address.data(), static_cast<int>(address.size() + 1));
+						std::wstring screenname;
+						screenname.resize(GetWindowTextLength(GetDlgItem(dlg, IDC_EDITSCREENNAME)));
+						GetDlgItemText(dlg, IDC_EDITSCREENNAME, screenname.data(), static_cast<int>(screenname.size() + 1));
+						MessageBox(dlg, std::format(L"Address: {}\nScreen Name: {}", address, screenname).c_str(), L"Alert", MB_OK);
 						return TRUE;
 					}
 
