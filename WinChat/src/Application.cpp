@@ -6,6 +6,7 @@
 #include <CommCtrl.h>
 
 #include "../resource.h"
+#include "Chat.h"
 
 //This pragma enables visual styles, which makes dialogs and their controls look modern.
 #pragma comment(linker,"\"/manifestdependency:type='win32' \
@@ -13,6 +14,11 @@ name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
 processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
 namespace wc {
+	struct MainDlgOutput {
+		std::wstring address;
+		std::wstring screenname;
+	};
+
 	Application::Application(std::string& appName, std::string& appVersion)
 		: m_appName(appName.begin(), appName.end())
 		, m_appVersion(appVersion.begin(), appVersion.end())
@@ -21,7 +27,18 @@ namespace wc {
 	}
 
 	void Application::run() {
-		DialogBoxParam(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_DIALOGMAIN), nullptr, (DLGPROC)mainDlgProc, reinterpret_cast<LPARAM>(this));
+		//First, run the main dialog to get needed input...
+		INT_PTR result = NULL;
+		while (result = DialogBoxParam(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_DIALOGMAIN), nullptr, (DLGPROC)mainDlgProc, reinterpret_cast<LPARAM>(this))) {
+			MainDlgOutput* output = reinterpret_cast<MainDlgOutput*>(result);
+			const auto [address, screenname] = *output;
+			delete output;
+
+			{
+				Chat chat(address, screenname);
+				chat.run();
+			}
+		}
 	}
 
 	BOOL CALLBACK Application::mainDlgProc(HWND dlg, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -63,7 +80,9 @@ namespace wc {
 						std::wstring screenname;
 						screenname.resize(GetWindowTextLength(GetDlgItem(dlg, IDC_EDITSCREENNAME)));
 						GetDlgItemText(dlg, IDC_EDITSCREENNAME, screenname.data(), static_cast<int>(screenname.size() + 1));
-						MessageBox(dlg, std::format(L"Address: {}\nScreen Name: {}", address, screenname).c_str(), L"Alert", MB_OK);
+
+						MainDlgOutput* out = new MainDlgOutput{ address, screenname };
+						EndDialog(dlg, reinterpret_cast<INT_PTR>(out));
 						return TRUE;
 					}
 
