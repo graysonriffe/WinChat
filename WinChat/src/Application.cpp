@@ -29,7 +29,7 @@ namespace wc {
 		: m_appName(appName.begin(), appName.end())
 		, m_appVersion(appVersion.begin(), appVersion.end())
 	{
-		std::wcout << std::format(L"{} {}", m_appName, m_appVersion);
+		std::wcout << std::format(L"{} {}\n", m_appName, m_appVersion);
 	}
 
 	void Application::run() {
@@ -85,6 +85,9 @@ namespace wc {
 
 				SendDlgItemMessage(dlg, IDC_EDITADDRESS, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"Address"));
 				SendDlgItemMessage(dlg, IDC_EDITSCREENNAME, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"User"));
+
+				RegisterHotKey(dlg, 1, MOD_NOREPEAT, VK_ESCAPE);
+
 				return TRUE;
 			}
 
@@ -118,6 +121,10 @@ namespace wc {
 
 				return FALSE;
 
+			case WM_HOTKEY:
+				if (wParam != 1)
+					return FALSE;
+				[[fallthrough]];
 			case WM_CLOSE:
 				EndDialog(dlg, 0);
 				return TRUE;
