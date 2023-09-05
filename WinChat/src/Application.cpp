@@ -14,9 +14,15 @@ name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
 processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
 namespace wc {
+	struct MainDlgInput {
+		Application* app;
+		int xPos, yPos;
+	};
+
 	struct MainDlgOutput {
 		std::wstring address;
 		std::wstring screenname;
+		int xPos, yPos;
 	};
 
 	Application::Application(std::string& appName, std::string& appVersion)
@@ -29,15 +35,20 @@ namespace wc {
 	void Application::run() {
 		//First, run the main dialog to get needed input...
 		INT_PTR result = NULL;
-		while (result = DialogBoxParam(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_DIALOGMAIN), nullptr, (DLGPROC)mainDlgProc, reinterpret_cast<LPARAM>(this))) {
+		MainDlgInput* input = new MainDlgInput{ this, -1, -1 };
+		while (result = DialogBoxParam(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_DIALOGMAIN), nullptr, (DLGPROC)mainDlgProc, reinterpret_cast<LPARAM>(input))) {
+			//Then create a Chat with the collected input...
 			MainDlgOutput* output = reinterpret_cast<MainDlgOutput*>(result);
-			const auto [address, screenname] = *output;
+			const auto [address, screenname, x, y] = *output;
 			delete output;
 
 			{
 				Chat chat(address, screenname);
 				chat.run();
 			}
+
+			//And repeat until the user exits from the main dialog.
+			input = new MainDlgInput{ this, x, y };
 		}
 	}
 
@@ -46,17 +57,23 @@ namespace wc {
 
 		switch (msg) {
 			case WM_INITDIALOG: {
-				app = reinterpret_cast<Application*>(lParam);
+				MainDlgInput* in = reinterpret_cast<MainDlgInput*>(lParam);
+				auto [appTemp, xPos, yPos] = *in;
+				app = appTemp;
+				delete in;
 
 				SetWindowText(dlg, app->m_appName.c_str());
 				SendMessage(dlg, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_ICONMAIN))));
 
-				POINT pt = { };
-				GetCursorPos(&pt);
-				MONITORINFO mi = { };
-				mi.cbSize = sizeof(mi);
-				GetMonitorInfo(MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST), &mi);
-				SetWindowPos(dlg, nullptr, mi.rcMonitor.left + 100, mi.rcMonitor.top + 100, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+				if (xPos < 0) {
+					POINT pt = { };
+					GetCursorPos(&pt);
+					MONITORINFO mi = { };
+					mi.cbSize = sizeof(mi);
+					GetMonitorInfo(MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST), &mi);
+					xPos = mi.rcMonitor.left + 100, yPos = mi.rcMonitor.top + 100;
+				}
+				SetWindowPos(dlg, nullptr, xPos, yPos, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
 
 				SetDlgItemText(dlg, IDC_STATICTITLE, app->m_appName.c_str());
 				LOGFONT lFont = { };
@@ -81,7 +98,9 @@ namespace wc {
 						screenname.resize(GetWindowTextLength(GetDlgItem(dlg, IDC_EDITSCREENNAME)));
 						GetDlgItemText(dlg, IDC_EDITSCREENNAME, screenname.data(), static_cast<int>(screenname.size() + 1));
 
-						MainDlgOutput* out = new MainDlgOutput{ address, screenname };
+						RECT dlgRect = { };
+						GetWindowRect(dlg, &dlgRect);
+						MainDlgOutput* out = new MainDlgOutput{ address, screenname, dlgRect.left, dlgRect.top };
 						EndDialog(dlg, reinterpret_cast<INT_PTR>(out));
 						return TRUE;
 					}
