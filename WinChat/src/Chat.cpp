@@ -12,21 +12,49 @@ namespace wc {
 	}
 
 	void Chat::run() {
-		addrinfo hints = { };
 		addrinfo* destInfo = nullptr;
-		hints.ai_family = AF_UNSPEC;
-		hints.ai_socktype = SOCK_STREAM;
-		getaddrinfo(toStr(m_address).c_str(), "9430", &hints, &destInfo);
+		if (getaddrinfo(toStr(m_address).c_str(), "9430", nullptr, &destInfo) != 0) {
+			MessageBox(nullptr, L"Error: Could not resolve host or invalid address!", L"Error", MB_ICONERROR);
+			return;
+		}
 
-		SOCKET sock = socket(destInfo->ai_family, destInfo->ai_socktype, destInfo->ai_protocol);
+		SOCKET sock = socket(destInfo->ai_family, SOCK_STREAM, NULL);
 		if (sock == INVALID_SOCKET) {
-			std::cerr << std::format("Error: could not create network socket!\n");
-			std::exit(1);
+			MessageBox(nullptr, L"Error: could not create network socket!", L"Error", MB_ICONERROR);
+			freeaddrinfo(destInfo);
+			return;
 		}
 
 		if (connect(sock, destInfo->ai_addr, static_cast<int>(destInfo->ai_addrlen)) != 0) {
-			std::cerr << std::format("Error: could not connect to destination!\n");
-			std::exit(1);
+			int errorCode = WSAGetLastError();
+			std::wstring errorStr;
+			switch (errorCode) {
+				case WSAETIMEDOUT:
+					errorStr = L"Timed out";
+					break;
+
+				case WSAECONNREFUSED:
+					errorStr = L"Connection refused (WinChat may not be running on remote host)";
+					break;
+
+				case WSAENETUNREACH:
+				case WSAEHOSTUNREACH:
+					errorStr = L"Remote host unreachable (You may not be connected to the internet)";
+					break;
+
+				case WSAEADDRNOTAVAIL:
+					errorStr = L"Not a valid address to connect to";
+					break;
+
+				default:
+					errorStr = std::format(L"Error Code {}", errorCode);
+					break;
+			}
+
+			MessageBox(nullptr, std::format(L"Error: Could not connect - {}", errorStr).c_str(), L"Error", MB_ICONERROR);
+			freeaddrinfo(destInfo);
+			closesocket(sock);
+			return;
 		}
 
 		freeaddrinfo(destInfo);
@@ -34,7 +62,7 @@ namespace wc {
 		std::string data;
 		while (data != "end") {
 			std::getline(std::cin, data);
-			send(sock, data.data(), static_cast<int>(data.size()), 0);
+			send(sock, data.data(), static_cast<int>(data.size()), NULL);
 		}
 
 		closesocket(sock);

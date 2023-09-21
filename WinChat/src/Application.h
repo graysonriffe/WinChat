@@ -17,5 +17,6 @@ namespace wc {
 
 		const std::wstring m_appName;
 		const std::wstring m_appVersion;
+		bool m_running;
 	};
 }
