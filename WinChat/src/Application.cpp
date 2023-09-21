@@ -1,9 +1,5 @@
+#include "pch.h"
 #include "Application.h"
-
-#include <iostream>
-#include <format>
-
-#include <CommCtrl.h>
 
 #include "../resource.h"
 #include "Chat.h"
@@ -33,7 +29,10 @@ namespace wc {
 	}
 
 	void Application::run() {
-		//First, run the main dialog to get needed input...
+		//First, start a thread to listen for incoming connections...
+		std::thread listenThread(&Application::startListen, this);
+
+		//Then, run the main dialog to get needed input...
 		INT_PTR result = NULL;
 		MainDlgInput* input = new MainDlgInput{ this, -1, -1 };
 		while (result = DialogBoxParam(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_DIALOGMAIN), nullptr, (DLGPROC)mainDlgProc, reinterpret_cast<LPARAM>(input))) {
@@ -50,6 +49,76 @@ namespace wc {
 			//And repeat until the user exits from the main dialog.
 			input = new MainDlgInput{ this, x, y };
 		}
+
+		listenThread.join();
+	}
+
+	void Application::startListen() {
+		WSADATA data = { };
+		if (WSAStartup(MAKEWORD(2, 2), &data) != 0) {
+			std::cerr << std::format("Error: could not initialize WinSock 2!\n");
+			std::exit(1);
+		}
+
+		if (LOBYTE(data.wVersion) != 2 || HIBYTE(data.wVersion) != 2) {
+			std::cerr << std::format("Error: WinSock version 2.2 not available!\n");
+			std::exit(1);
+		}
+
+		addrinfo hints = { };
+		addrinfo* hostInfo = nullptr;
+		hints.ai_family = AF_UNSPEC;
+		hints.ai_socktype = SOCK_STREAM;
+		hints.ai_flags = AI_PASSIVE;
+		getaddrinfo(nullptr, "9430", &hints, &hostInfo);
+
+		SOCKET sock = socket(hostInfo->ai_family, hostInfo->ai_socktype, hostInfo->ai_protocol);
+		if (sock == INVALID_SOCKET) {
+			std::cerr << std::format("Error: could not create network socket!\n");
+			std::exit(1);
+		}
+
+		if (bind(sock, hostInfo->ai_addr, static_cast<int>(hostInfo->ai_addrlen)) != 0) {
+			std::cerr << std::format("Error: could not bind network socket!\n");
+			std::exit(1);
+		}
+
+		freeaddrinfo(hostInfo);
+		listen(sock, 1);
+
+		sockaddr_storage remoteAddr = { };
+		int remoteSize = sizeof(remoteAddr);
+		SOCKET conSock = accept(sock, reinterpret_cast<sockaddr*>(&remoteAddr), &remoteSize);
+		if (conSock == INVALID_SOCKET) {
+			std::cerr << std::format("Error: could not accept connection!\n");;
+			std::exit(1);
+		}
+
+		std::string remoteStr;
+		remoteStr.resize(INET6_ADDRSTRLEN);
+		void* addrLocation = nullptr;
+		if (remoteAddr.ss_family == AF_INET) {
+			addrLocation = reinterpret_cast<void*>(&reinterpret_cast<sockaddr_in*>(&remoteAddr)->sin_addr);
+		}
+		else if (remoteAddr.ss_family = AF_INET6) {
+			addrLocation = reinterpret_cast<void*>(&reinterpret_cast<sockaddr_in6*>(&remoteAddr)->sin6_addr);
+		}
+		inet_ntop(remoteAddr.ss_family, addrLocation, remoteStr.data(), INET6_ADDRSTRLEN);
+		std::cout << std::format("Connected to: {}\n", remoteStr);
+
+		std::string buf(1000, 0);
+
+		int bytesRecvd = 1;
+		while (bytesRecvd = recv(conSock, buf.data(), 1000, 0)) {
+			buf.resize(bytesRecvd);
+			std::cout << std::format("Remote: {}\n", buf);
+			buf.resize(1000);
+		}
+
+		closesocket(conSock);
+
+		closesocket(sock);
+		WSACleanup();
 	}
 
 	BOOL CALLBACK Application::mainDlgProc(HWND dlg, UINT msg, WPARAM wParam, LPARAM lParam) {

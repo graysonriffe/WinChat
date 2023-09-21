@@ -12,6 +12,7 @@ namespace wc {
 
 		~Chat();
 	private:
-
+		const std::wstring m_address;
+		const std::wstring m_screenname;
 	};
 }

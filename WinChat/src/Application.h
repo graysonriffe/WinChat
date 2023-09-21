@@ -12,7 +12,7 @@ namespace wc {
 
 		~Application();
 	private:
-
+		void startListen();
 		static BOOL CALLBACK mainDlgProc(HWND dlg, UINT msg, WPARAM wParam, LPARAM lParam);
 
 		const std::wstring m_appName;
