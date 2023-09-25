@@ -42,24 +42,24 @@ namespace wc {
 	}
 
 	void Application::run() {
-		//First, start a thread to listen for incoming connections...
+		//First, start a thread to listen for incoming connections
 		std::thread listenThread(&Application::startListen, this);
 
-		//Then, run the main dialog to get needed input...
+		//Then, run the main dialog to get needed input
 		INT_PTR result = NULL;
 		MainDlgInput* input = new MainDlgInput{ this, -1, -1 };
-		while (result = DialogBoxParam(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_DIALOGMAIN), nullptr, (DLGPROC)mainDlgProc, reinterpret_cast<LPARAM>(input))) {
-			//Then create a Chat with the collected input...
+		while (result = DialogBoxParam(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_DIALOGMAIN), nullptr, reinterpret_cast<DLGPROC>(mainDlgProc), reinterpret_cast<LPARAM>(input))) {
+			//Then create a Chat with the collected input
 			MainDlgOutput* output = reinterpret_cast<MainDlgOutput*>(result);
 			const auto [address, screenname, x, y] = *output;
 			delete output;
 
 			{
 				Chat chat(address, screenname);
-				chat.run();
+				chat.run(x, y);
 			}
 
-			//And repeat until the user exits from the main dialog.
+			//And repeat until the user exits from the main dialog
 			input = new MainDlgInput{ this, x, y };
 		}
 
@@ -134,13 +134,13 @@ namespace wc {
 			case WM_INITDIALOG: {
 				MainDlgInput* in = reinterpret_cast<MainDlgInput*>(lParam);
 				auto [appTemp, xPos, yPos] = *in;
-				app = appTemp;
 				delete in;
+				app = appTemp;
 
 				SetWindowText(dlg, app->m_appName.c_str());
 				SendMessage(dlg, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_ICONMAIN))));
 
-				if (xPos < 0) {
+				if (xPos == -1 && yPos == -1) {
 					POINT pt = { };
 					GetCursorPos(&pt);
 					MONITORINFO mi = { };
@@ -171,7 +171,7 @@ namespace wc {
 						int addressSize = GetWindowTextLength(GetDlgItem(dlg, IDC_EDITADDRESS));
 						int screennameSize = GetWindowTextLength(GetDlgItem(dlg, IDC_EDITSCREENNAME));
 						if (!addressSize || !screennameSize) {
-							EDITBALLOONTIP balloon = { .cbStruct = sizeof(balloon), .pszTitle = L"Alert", .pszText = L"You must enter an address and screenname." };
+							EDITBALLOONTIP balloon = { .cbStruct = sizeof(balloon), .pszTitle = L"Alert", .pszText = L"You must enter an address and screen name." };
 							SendDlgItemMessage(dlg, addressSize ? IDC_EDITSCREENNAME : IDC_EDITADDRESS, EM_SHOWBALLOONTIP, NULL, reinterpret_cast<LPARAM>(&balloon));
 							return TRUE;
 						}
@@ -204,7 +204,7 @@ namespace wc {
 				return FALSE;
 
 			case WM_HOTKEY:
-				if (wParam != 1)
+				if (wParam != 1 || GetForegroundWindow() != dlg)
 					return FALSE;
 				[[fallthrough]];
 			case WM_CLOSE:
