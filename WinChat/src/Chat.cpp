@@ -29,6 +29,10 @@ namespace wc {
 		ConnDlgInput* input = new ConnDlgInput{ this, xPos, yPos };
 		DialogBoxParam(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_DIALOGCONNECTING), nullptr, reinterpret_cast<DLGPROC>(connDlgProc), reinterpret_cast<LPARAM>(input));
 
+		//If we're connected, open the chat window
+		if (m_connected)
+			DialogBoxParam(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_DIALOGCHAT), nullptr, reinterpret_cast<DLGPROC>(chatDlgProc), reinterpret_cast<LPARAM>(this));
+
 		netThread.join();
 	}
 
@@ -122,6 +126,24 @@ namespace wc {
 					EndDialog(dlg, 0);
 					return TRUE;
 				}
+		}
+
+		return FALSE;
+	}
+
+	BOOL CALLBACK Chat::chatDlgProc(HWND dlg, UINT msg, WPARAM wParam, LPARAM lParam) {
+		static Chat* chat = nullptr;
+
+		switch (msg) {
+			case WM_INITDIALOG:
+				chat = reinterpret_cast<Chat*>(lParam);
+				SetWindowText(dlg, std::format(L"remote screenname at {} - WinChat", chat->m_address).c_str());
+				SendMessage(dlg, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_ICONMAIN))));
+				return TRUE;
+
+			case WM_CLOSE:
+				EndDialog(dlg, 0);
+				return TRUE;
 		}
 
 		return FALSE;
