@@ -47,6 +47,9 @@
     <ClInclude Include="src\StrConv.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\TSQueue.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="WinChat.rc">

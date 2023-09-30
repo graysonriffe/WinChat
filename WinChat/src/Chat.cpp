@@ -4,11 +4,12 @@
 #include "StrConv.h"
 #include "../resource.h"
 
-#define IDT_CHECKCONN 1
+#define IDT_CHECKCONN 2
+#define IDT_UPDATECHAT 3
 
 namespace wc {
-	struct ConnDlgInput {
-		Chat* chat;
+	struct ChatDlgInput {
+		Chat* chatPtr;
 		int xPos, yPos;
 	};
 
@@ -21,55 +22,81 @@ namespace wc {
 
 	}
 
-	void Chat::run(int xPos, int yPos) {
+	void Chat::run(int xPos, int yPos, SOCKET socket) {
 		//Run net thread to connect and communicate
-		std::thread netThread(&Chat::runNetThread, this);
+		std::thread netThread(&Chat::runNetThread, this, socket);
 
-		//Show connection dialog until net thread connects
-		ConnDlgInput* input = new ConnDlgInput{ this, xPos, yPos };
-		DialogBoxParam(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_DIALOGCONNECTING), nullptr, reinterpret_cast<DLGPROC>(connDlgProc), reinterpret_cast<LPARAM>(input));
+		//Show connection dialog until net thread connects unless the listen thread already did that
+		ChatDlgInput input = { this, xPos, yPos };
+		if (!m_connected)
+			DialogBoxParam(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_DIALOGCONNECTING), nullptr, reinterpret_cast<DLGPROC>(connDlgProc), reinterpret_cast<LPARAM>(&input));
 
-		//If we're connected, open the chat window
+		//Either way now, if we're connected, open the chat window
 		if (m_connected)
-			DialogBoxParam(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_DIALOGCHAT), nullptr, reinterpret_cast<DLGPROC>(chatDlgProc), reinterpret_cast<LPARAM>(this));
+			DialogBoxParam(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_DIALOGCHAT), nullptr, reinterpret_cast<DLGPROC>(chatDlgProc), reinterpret_cast<LPARAM>(&input));
 
 		netThread.join();
 	}
 
-	void Chat::runNetThread() {
+	void Chat::runNetThread(SOCKET inSocket) {
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-		addrinfo* destInfo = nullptr;
-		if (getaddrinfo(toStr(m_address).c_str(), "9430", nullptr, &destInfo) != 0) {
-			MessageBox(nullptr, L"Error: Could not resolve host or invalid address!", L"Error", MB_ICONERROR);
-			m_connectionError = true;
-			return;
-		}
-
-		SOCKET sock = socket(destInfo->ai_family, SOCK_STREAM, NULL);
+		SOCKET sock = inSocket;
 		if (sock == INVALID_SOCKET) {
-			MessageBox(nullptr, L"Error: could not create network socket!", L"Error", MB_ICONERROR);
+			addrinfo* destInfo = nullptr;
+			if (getaddrinfo(toStr(m_address).c_str(), "9430", nullptr, &destInfo) != 0) {
+				MessageBox(nullptr, L"Error: Could not resolve host or invalid address!", L"Error", MB_ICONERROR);
+				m_connectionError = true;
+				return;
+			}
+
+			sock = socket(destInfo->ai_family, SOCK_STREAM, NULL);
+			if (sock == INVALID_SOCKET) {
+				MessageBox(nullptr, L"Error: could not create network socket!", L"Error", MB_ICONERROR);
+				freeaddrinfo(destInfo);
+				m_connectionError = true;
+				return;
+			}
+
+			if (connect(sock, destInfo->ai_addr, static_cast<int>(destInfo->ai_addrlen)) != 0) {
+				std::wstring errorStr = getErrorString();
+				MessageBox(nullptr, std::format(L"Error: Could not connect - {}", errorStr).c_str(), L"Error", MB_ICONERROR);
+				freeaddrinfo(destInfo);
+				closesocket(sock);
+				m_connectionError = true;
+				return;
+			}
+
 			freeaddrinfo(destInfo);
-			m_connectionError = true;
-			return;
 		}
 
-		if (connect(sock, destInfo->ai_addr, static_cast<int>(destInfo->ai_addrlen)) != 0) {
-			std::wstring errorStr = getErrorString();
-			MessageBox(nullptr, std::format(L"Error: Could not connect - {}", errorStr).c_str(), L"Error", MB_ICONERROR);
-			freeaddrinfo(destInfo);
-			closesocket(sock);
-			m_connectionError = true;
-			return;
-		}
-
-		freeaddrinfo(destInfo);
+		unsigned long yes = 1;
+		ioctlsocket(sock, FIONBIO, &yes);
 		m_connected = true;
 
-		std::string data;
-		while (data != "end") {
-			std::getline(std::cin, data);
-			send(sock, data.data(), static_cast<int>(data.size()), NULL);
+		std::wstring recvBuffer(2000, 0);
+		std::wstring sendStr;
+		int bytesRecvd = 0;
+		while (m_connected) {
+			while (!m_sendQueue.empty()) {
+				sendStr = m_sendQueue.pop();
+				send(sock, reinterpret_cast<const char*>(sendStr.c_str()), static_cast<int>(sendStr.size()) * sizeof(wchar_t), NULL);
+			}
+
+			bytesRecvd = recv(sock, reinterpret_cast<char*>(recvBuffer.data()), 2000, NULL);
+
+			if (!bytesRecvd) {
+				m_connected = false;
+				break;
+			}
+
+			if (WSAGetLastError() != WSAEWOULDBLOCK) {
+				recvBuffer.resize(bytesRecvd / 2);
+				m_recvQueue.push(recvBuffer);
+				recvBuffer.assign(2000, 0);
+			}
+
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		}
 
 		closesocket(sock);
@@ -109,11 +136,10 @@ namespace wc {
 
 		switch (msg) {
 			case WM_INITDIALOG: {
-				ConnDlgInput* in = reinterpret_cast<ConnDlgInput*>(lParam);
-				auto [chatTemp, x, y] = *in;
-				delete in;
-				chat = chatTemp;
-				SetWindowPos(dlg, nullptr, x + 100, y + 100, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+				ChatDlgInput* in = reinterpret_cast<ChatDlgInput*>(lParam);
+				chat = in->chatPtr;
+
+				SetWindowPos(dlg, nullptr, in->xPos + 100, in->yPos + 100, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
 				SetDlgItemText(dlg, IDC_STATICADDRESS, chat->m_address.c_str());
 				SendDlgItemMessage(dlg, IDC_PROGRESS, PBM_SETMARQUEE, TRUE, NULL);
 				SetTimer(dlg, IDT_CHECKCONN, 100, nullptr);
@@ -135,20 +161,93 @@ namespace wc {
 		static Chat* chat = nullptr;
 
 		switch (msg) {
-			case WM_INITDIALOG:
-				chat = reinterpret_cast<Chat*>(lParam);
+			case WM_INITDIALOG: {
+				ChatDlgInput* in = reinterpret_cast<ChatDlgInput*>(lParam);
+				chat = in->chatPtr;
+
 				SetWindowText(dlg, std::format(L"remote screenname at {} - WinChat", chat->m_address).c_str());
 				SendMessage(dlg, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_ICONMAIN))));
+
+				SetWindowPos(dlg, nullptr, in->xPos - 50, in->yPos - 50, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+
+				SendDlgItemMessage(dlg, IDC_EDITCHATINPUT, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"Message"));
+
+				SetDlgItemText(dlg, IDC_EDITCHATDISPLAY, std::format(L"Connected to remote screenname at {}", chat->m_address).c_str());
+
+				SetTimer(dlg, IDT_UPDATECHAT, 100, nullptr);
+
 				return TRUE;
+			}
+
+			case WM_COMMAND:
+				switch (LOWORD(wParam)) {
+					case IDC_BUTTONSEND: {
+						int inputLength = GetWindowTextLength(GetDlgItem(dlg, IDC_EDITCHATINPUT));
+						if (!inputLength) {
+							EDITBALLOONTIP balloon = { .cbStruct = sizeof(balloon), .pszTitle = L"Alert", .pszText = L"Enter your message here." };
+							SendDlgItemMessage(dlg, IDC_EDITCHATINPUT, EM_SHOWBALLOONTIP, NULL, reinterpret_cast<LPARAM>(&balloon));
+							return TRUE;
+						}
+
+						std::wstring buffer(inputLength, 0);
+						GetDlgItemText(dlg, IDC_EDITCHATINPUT, buffer.data(), static_cast<int>(buffer.size() + 1));
+						chat->m_sendQueue.push(buffer);
+
+						chat->addMessage(dlg, buffer);
+
+						SetDlgItemText(dlg, IDC_EDITCHATINPUT, L"");
+
+						return TRUE;
+					}
+
+					case IDC_BUTTONDISCONNECT:
+					case IDCANCEL:
+						PostMessage(dlg, WM_CLOSE, NULL, NULL);
+						return TRUE;
+				}
+
+				return FALSE;
+
+			case WM_TIMER:
+				if (wParam == IDT_UPDATECHAT) {
+					if (!chat->m_connected)
+						EndDialog(dlg, 0);
+
+					std::wstring remoteStr;
+					while (!chat->m_recvQueue.empty()) {
+						remoteStr = chat->m_recvQueue.pop();
+						chat->addMessage(dlg, remoteStr);
+					}
+
+					return TRUE;
+				}
+
+				return FALSE;
 
 			case WM_CLOSE:
-				EndDialog(dlg, 0);
+				chat->m_connected = false;
 				return TRUE;
 		}
 
 		return FALSE;
 	}
 
+	void Chat::addMessage(HWND dlg, std::wstring& in) {
+		SCROLLINFO si = { .cbSize = sizeof(si), .fMask = SIF_POS | SIF_PAGE | SIF_RANGE };
+		GetScrollInfo(GetDlgItem(dlg, IDC_EDITCHATDISPLAY), SB_VERT, &si);
+		bool shouldScroll = static_cast<int>(si.nPage) + si.nPos > si.nMax;
+
+		std::wstring buffer(GetWindowTextLength(GetDlgItem(dlg, IDC_EDITCHATDISPLAY)), 0);
+		GetDlgItemText(dlg, IDC_EDITCHATDISPLAY, buffer.data(), static_cast<int>(buffer.size() + 1));
+		buffer += std::format(L"\r\n{}", in);
+		SetDlgItemText(dlg, IDC_EDITCHATDISPLAY, buffer.c_str());
+
+		if (shouldScroll) {
+			SendDlgItemMessage(dlg, IDC_EDITCHATDISPLAY, EM_SETSEL, 0, -1);
+			SendDlgItemMessage(dlg, IDC_EDITCHATDISPLAY, EM_SETSEL, -1, -1);
+			SendDlgItemMessage(dlg, IDC_EDITCHATDISPLAY, EM_SCROLLCARET, 0, 0);
+		}
+	}
 
 	Chat::~Chat() {
 

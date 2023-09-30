@@ -4,6 +4,9 @@
 #include <iostream>
 #include <format>
 #include <thread>
+#include <mutex>
+#include <atomic>
+#include <queue>
 
 //Windows
 #define WIN32_LEAN_AND_MEAN

@@ -3,15 +3,18 @@
 
 #include "../resource.h"
 #include "Chat.h"
+#include "StrConv.h"
 
 //This pragma enables visual styles, which makes dialogs and their controls look modern.
 #pragma comment(linker,"\"/manifestdependency:type='win32' \
 name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
 processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
+#define IDT_CHECKINCONN 1
+
 namespace wc {
 	struct MainDlgInput {
-		Application* app;
+		Application* appPtr;
 		int xPos, yPos;
 	};
 
@@ -19,12 +22,15 @@ namespace wc {
 		std::wstring address;
 		std::wstring screenname;
 		int xPos, yPos;
+		SOCKET inSock;
 	};
 
 	Application::Application(std::string& appName, std::string& appVersion)
 		: m_appName(appName.begin(), appName.end())
 		, m_appVersion(appVersion.begin(), appVersion.end())
 		, m_running(true)
+		, m_inSocket(INVALID_SOCKET)
+		, m_inAddress()
 	{
 		std::wcout << std::format(L"{} {}\n", m_appName, m_appVersion);
 
@@ -45,18 +51,18 @@ namespace wc {
 		//First, start a thread to listen for incoming connections
 		std::thread listenThread(&Application::startListen, this);
 
-		//Then, run the main dialog to get needed input
+		//Then, run the main dialog to get needed input for outgoing connections
 		INT_PTR result = NULL;
 		MainDlgInput* input = new MainDlgInput{ this, -1, -1 };
 		while (result = DialogBoxParam(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_DIALOGMAIN), nullptr, reinterpret_cast<DLGPROC>(mainDlgProc), reinterpret_cast<LPARAM>(input))) {
-			//Then create a Chat with the collected input
+			//Create a Chat with the collected input or the incoming connection
 			MainDlgOutput* output = reinterpret_cast<MainDlgOutput*>(result);
-			const auto [address, screenname, x, y] = *output;
+			const auto [address, screenname, x, y, inSocket] = *output;
 			delete output;
 
 			{
 				Chat chat(address, screenname);
-				chat.run(x, y);
+				chat.run(x, y, inSocket);
 			}
 
 			//And repeat until the user exits from the main dialog
@@ -81,9 +87,9 @@ namespace wc {
 		unsigned long no = 0;
 		setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, reinterpret_cast<char*>(&no), sizeof(no));
 
-		if (bind(sock, hostInfo->ai_addr, static_cast<int>(hostInfo->ai_addrlen)) != 0) {
-			MessageBox(nullptr, L"Error: could not bind network socket!", L"Error", MB_ICONERROR);
-			std::exit(1);
+		while (bind(sock, hostInfo->ai_addr, static_cast<int>(hostInfo->ai_addrlen)) != 0) {
+			freeaddrinfo(hostInfo);
+			getaddrinfo("::", "9431", nullptr, &hostInfo);
 		}
 
 		freeaddrinfo(hostInfo);
@@ -106,22 +112,12 @@ namespace wc {
 			if (errorCode == WSAEWOULDBLOCK)
 				continue;
 
-			ioctlsocket(conSock, FIONBIO, &no);
-
 			std::string remoteStr(INET6_ADDRSTRLEN, 0);
 			inet_ntop(AF_INET6, &remoteAddr.sin6_addr, remoteStr.data(), INET6_ADDRSTRLEN);
 			remoteStr.resize(remoteStr.find_first_of('\0', 0));
-			std::cout << std::format("Connected to: {}\n", remoteStr);
 
-			std::string buf(1000, 0);
-			int bytesRecvd = 0;
-			while (bytesRecvd = recv(conSock, buf.data(), 1000, NULL)) {
-				buf.resize(bytesRecvd);
-				std::cout << std::format("Remote: {}\n", buf);
-				buf.resize(1000);
-			}
-
-			closesocket(conSock);
+			m_inAddress = toWideStr(remoteStr);
+			m_inSocket = conSock;
 		}
 
 		closesocket(sock);
@@ -133,9 +129,9 @@ namespace wc {
 		switch (msg) {
 			case WM_INITDIALOG: {
 				MainDlgInput* in = reinterpret_cast<MainDlgInput*>(lParam);
-				auto [appTemp, xPos, yPos] = *in;
+				auto [appPtr, xPos, yPos] = *in;
 				delete in;
-				app = appTemp;
+				app = appPtr;
 
 				SetWindowText(dlg, app->m_appName.c_str());
 				SendMessage(dlg, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_ICONMAIN))));
@@ -160,7 +156,7 @@ namespace wc {
 				SendDlgItemMessage(dlg, IDC_EDITADDRESS, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"Address"));
 				SendDlgItemMessage(dlg, IDC_EDITSCREENNAME, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"User"));
 
-				RegisterHotKey(dlg, 1, MOD_NOREPEAT, VK_ESCAPE);
+				SetTimer(dlg, IDT_CHECKINCONN, 100, nullptr);
 
 				return TRUE;
 			}
@@ -185,8 +181,7 @@ namespace wc {
 
 						RECT dlgRect = { };
 						GetWindowRect(dlg, &dlgRect);
-						MainDlgOutput* out = new MainDlgOutput{ address, screenname, dlgRect.left, dlgRect.top };
-						EndDialog(dlg, reinterpret_cast<INT_PTR>(out));
+						EndDialog(dlg, reinterpret_cast<INT_PTR>(new MainDlgOutput{ address, screenname, dlgRect.left, dlgRect.top, INVALID_SOCKET}));
 						return TRUE;
 					}
 
@@ -197,16 +192,26 @@ namespace wc {
 
 					case IDC_BUTTONEXIT:
 					case ID_FILE_EXIT:
+					case IDCANCEL: //Escape key press
 						PostMessage(dlg, WM_CLOSE, NULL, NULL);
 						return TRUE;
 				}
 
 				return FALSE;
 
-			case WM_HOTKEY:
-				if (wParam != 1 || GetForegroundWindow() != dlg)
-					return FALSE;
-				[[fallthrough]];
+			case WM_TIMER:
+				if (wParam == IDT_CHECKINCONN && app->m_inSocket != INVALID_SOCKET) {
+					KillTimer(dlg, IDT_CHECKINCONN);
+					//Ask if to connect and for screen name here
+					RECT dlgRect = { };
+					GetWindowRect(dlg, &dlgRect);
+					EndDialog(dlg, reinterpret_cast<INT_PTR>(new MainDlgOutput{ app->m_inAddress, L"Temp screen name", dlgRect.left, dlgRect.top, app->m_inSocket }));
+					app->m_inSocket = INVALID_SOCKET;
+					return TRUE;
+				}
+
+				return FALSE;
+
 			case WM_CLOSE:
 				EndDialog(dlg, 0);
 				return TRUE;

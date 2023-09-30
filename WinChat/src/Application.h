@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include <atomic>
 
 #include <Windows.h>
 
@@ -18,5 +19,8 @@ namespace wc {
 		const std::wstring m_appName;
 		const std::wstring m_appVersion;
 		bool m_running;
+
+		std::atomic<SOCKET> m_inSocket;
+		std::wstring m_inAddress;
 	};
 }

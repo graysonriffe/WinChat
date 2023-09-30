@@ -116,6 +116,7 @@
     <ClInclude Include="src\Chat.h" />
     <ClInclude Include="src\pch.h" />
     <ClInclude Include="src\StrConv.h" />
+    <ClInclude Include="src\TSQueue.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="WinChat.rc" />
