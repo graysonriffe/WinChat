@@ -77,7 +77,16 @@ namespace wc {
 
 		//Send and receive screen names
 		send(sock, reinterpret_cast<const char*>(m_screenname.c_str()), static_cast<int>(m_screenname.size()) * sizeof(wchar_t), NULL);
-		m_remoteScreenname.resize(recv(sock, reinterpret_cast<char*>(m_remoteScreenname.data()), 1000, NULL) / 2);
+		int bytesRemoteScreenname = recv(sock, reinterpret_cast<char*>(m_remoteScreenname.data()), 1000, NULL);
+
+		if (!bytesRemoteScreenname || WSAGetLastError() == WSAECONNRESET) {
+			MessageBox(nullptr, L"The remote host denied the connection.", L"Error", MB_ICONERROR);
+			m_connectionError = true;
+			closesocket(sock);
+			return;
+		}
+
+		m_remoteScreenname.resize(bytesRemoteScreenname / 2);
 		ioctlsocket(sock, FIONBIO, &yes);
 
 		m_connected = true;
@@ -85,7 +94,7 @@ namespace wc {
 		std::wstring recvBuffer(2000, 0);
 		std::wstring sendStr;
 		int bytesRecvd = 0;
-		while (m_connected) {
+		while (m_connected && !m_connectionError) {
 			while (!m_sendQueue.empty()) {
 				sendStr = m_sendQueue.pop();
 				send(sock, reinterpret_cast<const char*>(sendStr.c_str()), static_cast<int>(sendStr.size()) * sizeof(wchar_t), NULL);
@@ -147,9 +156,11 @@ namespace wc {
 				ChatDlgInput* in = reinterpret_cast<ChatDlgInput*>(lParam);
 				chat = in->chatPtr;
 
+				SendMessage(dlg, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_ICONMAIN))));
 				SetWindowPos(dlg, nullptr, in->xPos + 100, in->yPos + 100, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
 				SetDlgItemText(dlg, IDC_STATICADDRESS, chat->m_address.c_str());
 				SendDlgItemMessage(dlg, IDC_PROGRESS, PBM_SETMARQUEE, TRUE, NULL);
+
 				SetTimer(dlg, IDT_CHECKCONN, 100, nullptr);
 
 				return TRUE;
@@ -175,9 +186,7 @@ namespace wc {
 
 				SetWindowText(dlg, std::format(L"{} - WinChat", chat->m_remoteScreenname).c_str());
 				SendMessage(dlg, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_ICONMAIN))));
-
 				SetWindowPos(dlg, nullptr, in->xPos - 50, in->yPos - 50, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
-
 				SendDlgItemMessage(dlg, IDC_EDITCHATINPUT, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"Message"));
 
 				SetDlgItemText(dlg, IDC_EDITCHATDISPLAY, std::format(L"Connected to {} at {}", chat->m_remoteScreenname, chat->m_address).c_str());

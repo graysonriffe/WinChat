@@ -15,6 +15,7 @@ namespace wc {
 	private:
 		void startListen();
 		static BOOL CALLBACK mainDlgProc(HWND dlg, UINT msg, WPARAM wParam, LPARAM lParam);
+		static BOOL CALLBACK acceptDlgProc(HWND dlg, UINT msg, WPARAM wParam, LPARAM lParam);
 
 		const std::wstring m_appName;
 		const std::wstring m_appVersion;

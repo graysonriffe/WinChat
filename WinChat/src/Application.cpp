@@ -118,6 +118,8 @@ namespace wc {
 
 			m_inAddress = toWideStr(remoteStr);
 			m_inSocket = conSock;
+
+			//Wait here until there is no incoming connection anymore before accepting again
 		}
 
 		closesocket(sock);
@@ -144,15 +146,13 @@ namespace wc {
 					GetMonitorInfo(MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST), &mi);
 					xPos = mi.rcMonitor.left + 100, yPos = mi.rcMonitor.top + 100;
 				}
-				SetWindowPos(dlg, nullptr, xPos, yPos, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
 
+				SetWindowPos(dlg, nullptr, xPos, yPos, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
 				SetDlgItemText(dlg, IDC_STATICTITLE, app->m_appName.c_str());
 				LOGFONT lFont = { .lfHeight = 50 };
 				HFONT font = CreateFontIndirect(&lFont);
 				SendMessage(GetDlgItem(dlg, IDC_STATICTITLE), WM_SETFONT, reinterpret_cast<LPARAM>(font), NULL);
-
 				SetDlgItemText(dlg, IDC_STATICDESC, L"A simple Windows chat app");
-
 				SendDlgItemMessage(dlg, IDC_EDITADDRESS, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"Address"));
 				SendDlgItemMessage(dlg, IDC_EDITSCREENNAME, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"User"));
 
@@ -202,10 +202,23 @@ namespace wc {
 			case WM_TIMER:
 				if (wParam == IDT_CHECKINCONN && app->m_inSocket != INVALID_SOCKET) {
 					KillTimer(dlg, IDT_CHECKINCONN);
-					//Ask if to connect and for screen name here
 					RECT dlgRect = { };
 					GetWindowRect(dlg, &dlgRect);
-					EndDialog(dlg, reinterpret_cast<INT_PTR>(new MainDlgOutput{ app->m_inAddress, L"Temp screen name", dlgRect.left, dlgRect.top, app->m_inSocket }));
+					MainDlgInput acceptInput = { app, dlgRect.left, dlgRect.top };
+
+					INT_PTR result = DialogBoxParam(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_DIALOGACCEPTCONNECTION), dlg, reinterpret_cast<DLGPROC>(acceptDlgProc), reinterpret_cast<LPARAM>(&acceptInput));
+
+					if (result == IDCANCEL) {
+						closesocket(app->m_inSocket);
+						app->m_inSocket = INVALID_SOCKET;
+						SetTimer(dlg, IDT_CHECKINCONN, 100, nullptr);
+						return TRUE;
+					}
+
+					MainDlgOutput* out = reinterpret_cast<MainDlgOutput*>(result);
+
+					EndDialog(dlg, reinterpret_cast<INT_PTR>(new MainDlgOutput{ app->m_inAddress, out->screenname, dlgRect.left, dlgRect.top, app->m_inSocket }));
+					delete out;
 					app->m_inSocket = INVALID_SOCKET;
 					return TRUE;
 				}
@@ -215,6 +228,50 @@ namespace wc {
 			case WM_CLOSE:
 				EndDialog(dlg, 0);
 				return TRUE;
+		}
+
+		return FALSE;
+	}
+
+	BOOL CALLBACK Application::acceptDlgProc(HWND dlg, UINT msg, WPARAM wParam, LPARAM lParam) {
+		static Application* app = nullptr;
+
+		switch (msg) {
+			case WM_INITDIALOG: {
+				MainDlgInput* in = reinterpret_cast<MainDlgInput*>(lParam);
+				app = in->appPtr;
+
+				SendMessage(dlg, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_ICONMAIN))));
+				SetWindowPos(dlg, nullptr, in->xPos + 30, in->yPos + 30, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+
+				SetDlgItemText(dlg, IDC_STATICREMOTEINFO, app->m_inAddress.c_str());
+				SendDlgItemMessage(dlg, IDC_EDITSCREENNAME, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"User"));
+
+				return TRUE;
+			}
+
+			case WM_COMMAND:
+				switch (LOWORD(wParam)) {
+					case IDOK: {
+						int inputLength = GetWindowTextLength(GetDlgItem(dlg, IDC_EDITSCREENNAME));
+						if (!inputLength) {
+							EDITBALLOONTIP balloon = { .cbStruct = sizeof(balloon), .pszTitle = L"Alert", .pszText = L"You must enter a screen name." };
+							SendDlgItemMessage(dlg, IDC_EDITSCREENNAME, EM_SHOWBALLOONTIP, NULL, reinterpret_cast<LPARAM>(&balloon));
+							return TRUE;
+						}
+
+						std::wstring buffer(inputLength, 0);
+						GetDlgItemText(dlg, IDC_EDITSCREENNAME, buffer.data(), static_cast<int>(buffer.size() + 1));
+						EndDialog(dlg, reinterpret_cast<INT_PTR>(new MainDlgOutput{ std::wstring(), buffer, NULL, NULL, INVALID_SOCKET}));
+						return TRUE;
+					}
+
+					case IDCANCEL:
+						EndDialog(dlg, wParam);
+						return TRUE;
+				}
+
+				return FALSE;
 		}
 
 		return FALSE;
