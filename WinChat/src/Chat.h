@@ -18,10 +18,11 @@ namespace wc {
 		std::wstring getErrorString();
 		static BOOL CALLBACK connDlgProc(HWND dlg, UINT msg, WPARAM wParam, LPARAM lParam);
 		static BOOL CALLBACK chatDlgProc(HWND dlg, UINT msg, WPARAM wParam, LPARAM lParam);
-		void addMessage(HWND dlg, std::wstring& str);
+		void addMessage(HWND dlg, std::wstring str);
 
 		const std::wstring m_address;
 		const std::wstring m_screenname;
+		std::wstring m_remoteScreenname;
 		bool m_connected;
 		bool m_connectionError;
 

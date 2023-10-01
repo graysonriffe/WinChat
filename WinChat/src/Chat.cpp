@@ -16,6 +16,7 @@ namespace wc {
 	Chat::Chat(std::wstring address, std::wstring screenname)
 		: m_address(address)
 		, m_screenname(screenname)
+		, m_remoteScreenname(1000, 0)
 		, m_connected(false)
 		, m_connectionError(false)
 	{
@@ -71,7 +72,14 @@ namespace wc {
 		}
 
 		unsigned long yes = 1;
+		unsigned long no = 0;
+		ioctlsocket(sock, FIONBIO, &no);
+
+		//Send and receive screen names
+		send(sock, reinterpret_cast<const char*>(m_screenname.c_str()), static_cast<int>(m_screenname.size()) * sizeof(wchar_t), NULL);
+		m_remoteScreenname.resize(recv(sock, reinterpret_cast<char*>(m_remoteScreenname.data()), 1000, NULL) / 2);
 		ioctlsocket(sock, FIONBIO, &yes);
+
 		m_connected = true;
 
 		std::wstring recvBuffer(2000, 0);
@@ -165,14 +173,14 @@ namespace wc {
 				ChatDlgInput* in = reinterpret_cast<ChatDlgInput*>(lParam);
 				chat = in->chatPtr;
 
-				SetWindowText(dlg, std::format(L"remote screenname at {} - WinChat", chat->m_address).c_str());
+				SetWindowText(dlg, std::format(L"{} - WinChat", chat->m_remoteScreenname).c_str());
 				SendMessage(dlg, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_ICONMAIN))));
 
 				SetWindowPos(dlg, nullptr, in->xPos - 50, in->yPos - 50, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
 
 				SendDlgItemMessage(dlg, IDC_EDITCHATINPUT, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"Message"));
 
-				SetDlgItemText(dlg, IDC_EDITCHATDISPLAY, std::format(L"Connected to remote screenname at {}", chat->m_address).c_str());
+				SetDlgItemText(dlg, IDC_EDITCHATDISPLAY, std::format(L"Connected to {} at {}", chat->m_remoteScreenname, chat->m_address).c_str());
 
 				SetTimer(dlg, IDT_UPDATECHAT, 100, nullptr);
 
@@ -193,7 +201,7 @@ namespace wc {
 						GetDlgItemText(dlg, IDC_EDITCHATINPUT, buffer.data(), static_cast<int>(buffer.size() + 1));
 						chat->m_sendQueue.push(buffer);
 
-						chat->addMessage(dlg, buffer);
+						chat->addMessage(dlg, std::format(L"{} - {}", chat->m_screenname, buffer).c_str());
 
 						SetDlgItemText(dlg, IDC_EDITCHATINPUT, L"");
 
@@ -216,7 +224,7 @@ namespace wc {
 					std::wstring remoteStr;
 					while (!chat->m_recvQueue.empty()) {
 						remoteStr = chat->m_recvQueue.pop();
-						chat->addMessage(dlg, remoteStr);
+						chat->addMessage(dlg, std::format(L"{} - {}", chat->m_remoteScreenname, remoteStr).c_str());
 					}
 
 					return TRUE;
@@ -232,21 +240,20 @@ namespace wc {
 		return FALSE;
 	}
 
-	void Chat::addMessage(HWND dlg, std::wstring& in) {
+	void Chat::addMessage(HWND dlg, std::wstring in) {
 		SCROLLINFO si = { .cbSize = sizeof(si), .fMask = SIF_POS | SIF_PAGE | SIF_RANGE };
 		GetScrollInfo(GetDlgItem(dlg, IDC_EDITCHATDISPLAY), SB_VERT, &si);
-		bool shouldScroll = static_cast<int>(si.nPage) + si.nPos > si.nMax;
 
 		std::wstring buffer(GetWindowTextLength(GetDlgItem(dlg, IDC_EDITCHATDISPLAY)), 0);
 		GetDlgItemText(dlg, IDC_EDITCHATDISPLAY, buffer.data(), static_cast<int>(buffer.size() + 1));
-		buffer += std::format(L"\r\n{}", in);
+		buffer += std::format(L"\r\n\r\n{}", in);
 		SetDlgItemText(dlg, IDC_EDITCHATDISPLAY, buffer.c_str());
 
-		if (shouldScroll) {
-			SendDlgItemMessage(dlg, IDC_EDITCHATDISPLAY, EM_SETSEL, 0, -1);
-			SendDlgItemMessage(dlg, IDC_EDITCHATDISPLAY, EM_SETSEL, -1, -1);
-			SendDlgItemMessage(dlg, IDC_EDITCHATDISPLAY, EM_SCROLLCARET, 0, 0);
-		}
+		//If scrolled to the bottom before adding the text
+		if (static_cast<int>(si.nPage) + si.nPos > si.nMax)
+			SendDlgItemMessage(dlg, IDC_EDITCHATDISPLAY, EM_LINESCROLL, 0, si.nMax);
+		else
+			SendDlgItemMessage(dlg, IDC_EDITCHATDISPLAY, EM_LINESCROLL, 0, si.nPos);
 	}
 
 	Chat::~Chat() {
