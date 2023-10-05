@@ -119,7 +119,14 @@ namespace wc {
 			m_inAddress = toWideStr(remoteStr);
 			m_inSocket = conSock;
 
-			//Wait here until there is no incoming connection anymore before accepting again
+			//If the socket isn't dealt with by the other thread in time, we most likely already have a connection
+			//This also prevents connecting to yourself
+			std::this_thread::sleep_for(std::chrono::seconds(1));
+
+			if (m_inSocket != INVALID_SOCKET) {
+				closesocket(m_inSocket);
+				m_inSocket = INVALID_SOCKET;
+			}
 		}
 
 		closesocket(sock);
@@ -181,7 +188,7 @@ namespace wc {
 
 						RECT dlgRect = { };
 						GetWindowRect(dlg, &dlgRect);
-						EndDialog(dlg, reinterpret_cast<INT_PTR>(new MainDlgOutput{ address, screenname, dlgRect.left, dlgRect.top, INVALID_SOCKET}));
+						EndDialog(dlg, reinterpret_cast<INT_PTR>(new MainDlgOutput{ address, screenname, dlgRect.left, dlgRect.top, INVALID_SOCKET }));
 						return TRUE;
 					}
 
@@ -202,6 +209,8 @@ namespace wc {
 			case WM_TIMER:
 				if (wParam == IDT_CHECKINCONN && app->m_inSocket != INVALID_SOCKET) {
 					KillTimer(dlg, IDT_CHECKINCONN);
+					SOCKET tempSock = app->m_inSocket;
+					app->m_inSocket = INVALID_SOCKET;
 					RECT dlgRect = { };
 					GetWindowRect(dlg, &dlgRect);
 					MainDlgInput acceptInput = { app, dlgRect.left, dlgRect.top };
@@ -209,17 +218,15 @@ namespace wc {
 					INT_PTR result = DialogBoxParam(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_DIALOGACCEPTCONNECTION), dlg, reinterpret_cast<DLGPROC>(acceptDlgProc), reinterpret_cast<LPARAM>(&acceptInput));
 
 					if (result == IDCANCEL) {
-						closesocket(app->m_inSocket);
-						app->m_inSocket = INVALID_SOCKET;
+						closesocket(tempSock);
 						SetTimer(dlg, IDT_CHECKINCONN, 100, nullptr);
 						return TRUE;
 					}
 
 					MainDlgOutput* out = reinterpret_cast<MainDlgOutput*>(result);
 
-					EndDialog(dlg, reinterpret_cast<INT_PTR>(new MainDlgOutput{ app->m_inAddress, out->screenname, dlgRect.left, dlgRect.top, app->m_inSocket }));
+					EndDialog(dlg, reinterpret_cast<INT_PTR>(new MainDlgOutput{ app->m_inAddress, out->screenname, dlgRect.left, dlgRect.top, tempSock }));
 					delete out;
-					app->m_inSocket = INVALID_SOCKET;
 					return TRUE;
 				}
 
@@ -262,7 +269,7 @@ namespace wc {
 
 						std::wstring buffer(inputLength, 0);
 						GetDlgItemText(dlg, IDC_EDITSCREENNAME, buffer.data(), static_cast<int>(buffer.size() + 1));
-						EndDialog(dlg, reinterpret_cast<INT_PTR>(new MainDlgOutput{ std::wstring(), buffer, NULL, NULL, INVALID_SOCKET}));
+						EndDialog(dlg, reinterpret_cast<INT_PTR>(new MainDlgOutput{ std::wstring(), buffer, NULL, NULL, INVALID_SOCKET }));
 						return TRUE;
 					}
 
