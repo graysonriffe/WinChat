@@ -3,13 +3,12 @@
 #include "Application.h"
 
 #define APPNAME "WinChat"
+#define DEFAULTPORT 9430
 
 int main(int argc, char* argv[]) {
-	std::string appName = APPNAME;
-	std::string appVer = APPVERSION;
 
 	{
-		wc::Application app(appName, appVer);
+		wc::Application app(APPNAME, APPVERSION, DEFAULTPORT);
 		app.run();
 	}
 

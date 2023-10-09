@@ -13,8 +13,9 @@ namespace wc {
 		int xPos, yPos;
 	};
 
-	Chat::Chat(std::wstring address, std::wstring screenname)
+	Chat::Chat(std::wstring address, std::wstring port, std::wstring screenname)
 		: m_address(address)
+		, m_port(port)
 		, m_screenname(screenname)
 		, m_remoteScreenname(1000, 0)
 		, m_connected(false)
@@ -45,7 +46,7 @@ namespace wc {
 		SOCKET sock = inSocket;
 		if (sock == INVALID_SOCKET) {
 			addrinfo* destInfo = nullptr;
-			if (getaddrinfo(toStr(m_address).c_str(), "9430", nullptr, &destInfo) != 0) {
+			if (getaddrinfo(toStr(m_address).c_str(), toStr(m_port).c_str(), nullptr, &destInfo) != 0) {
 				MessageBox(nullptr, L"Error: Could not resolve host or invalid address!", L"Error", MB_ICONERROR);
 				m_connectionError = true;
 				return;
@@ -128,7 +129,7 @@ namespace wc {
 				break;
 
 			case WSAECONNREFUSED:
-				out = L"Connection refused (WinChat may not be running on remote host)";
+				out = L"Connection refused";
 				break;
 
 			case WSAENETUNREACH:
@@ -158,7 +159,7 @@ namespace wc {
 
 				SendMessage(dlg, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_ICONMAIN))));
 				SetWindowPos(dlg, nullptr, in->xPos + 100, in->yPos + 100, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
-				SetDlgItemText(dlg, IDC_STATICADDRESS, chat->m_address.c_str());
+				SetDlgItemText(dlg, IDC_STATICADDRESS, std::format(L"{} on port {}", chat->m_address, chat->m_port).c_str());
 				SendDlgItemMessage(dlg, IDC_PROGRESS, PBM_SETMARQUEE, TRUE, NULL);
 
 				SetTimer(dlg, IDT_CHECKCONN, 100, nullptr);
@@ -184,7 +185,7 @@ namespace wc {
 				ChatDlgInput* in = reinterpret_cast<ChatDlgInput*>(lParam);
 				chat = in->chatPtr;
 
-				SetWindowText(dlg, std::format(L"{} - WinChat", chat->m_remoteScreenname).c_str());
+				SetWindowText(dlg, std::format(L"Chat with {}", chat->m_remoteScreenname).c_str());
 				SendMessage(dlg, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_ICONMAIN))));
 				SetWindowPos(dlg, nullptr, in->xPos - 50, in->yPos - 50, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
 				SendDlgItemMessage(dlg, IDC_EDITCHATINPUT, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"Message"));
@@ -210,7 +211,7 @@ namespace wc {
 						GetDlgItemText(dlg, IDC_EDITCHATINPUT, buffer.data(), static_cast<int>(buffer.size() + 1));
 						chat->m_sendQueue.push(buffer);
 
-						chat->addMessage(dlg, std::format(L"{} - {}", chat->m_screenname, buffer).c_str());
+						chat->addMessage(dlg, std::format(L"{} - {}", chat->m_screenname, buffer));
 
 						SetDlgItemText(dlg, IDC_EDITCHATINPUT, L"");
 
@@ -233,7 +234,7 @@ namespace wc {
 					std::wstring remoteStr;
 					while (!chat->m_recvQueue.empty()) {
 						remoteStr = chat->m_recvQueue.pop();
-						chat->addMessage(dlg, std::format(L"{} - {}", chat->m_remoteScreenname, remoteStr).c_str());
+						chat->addMessage(dlg, std::format(L"{} - {}", chat->m_remoteScreenname, remoteStr));
 					}
 
 					return TRUE;

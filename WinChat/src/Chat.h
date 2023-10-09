@@ -8,7 +8,7 @@
 namespace wc {
 	class Chat {
 	public:
-		Chat(std::wstring address, std::wstring screenname);
+		Chat(std::wstring address, std::wstring port, std::wstring screenname);
 
 		void run(int xPos, int yPos, SOCKET socket);
 
@@ -21,6 +21,7 @@ namespace wc {
 		void addMessage(HWND dlg, std::wstring str);
 
 		const std::wstring m_address;
+		const std::wstring m_port;
 		const std::wstring m_screenname;
 		std::wstring m_remoteScreenname;
 		bool m_connected;

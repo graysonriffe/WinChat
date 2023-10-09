@@ -22,16 +22,18 @@
 #define IDC_BUTTONSEND                  1014
 #define IDC_BUTTONDISCONNECT            1015
 #define IDC_STATICREMOTEINFO            1017
+#define IDC_STATICLISTENPORT            1018
 #define ID_FILE_EXIT                    40001
 #define ID_HELP_ABOUT                   40002
+#define ID_HELP_QUCKSTART               40003
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        113
-#define _APS_NEXT_COMMAND_VALUE         40003
-#define _APS_NEXT_CONTROL_VALUE         1018
+#define _APS_NEXT_COMMAND_VALUE         40004
+#define _APS_NEXT_CONTROL_VALUE         1019
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

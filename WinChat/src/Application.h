@@ -7,7 +7,7 @@
 namespace wc {
 	class Application {
 	public:
-		Application(std::string& appName, std::string& appVersion);
+		Application(const std::string& appName, const std::string& appVersion, const int defaultPort);
 
 		void run();
 
@@ -19,6 +19,8 @@ namespace wc {
 
 		const std::wstring m_appName;
 		const std::wstring m_appVersion;
+		const int m_defaultPort;
+		int m_listenPort;
 		bool m_running;
 
 		std::atomic<SOCKET> m_inSocket;
