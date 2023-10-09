@@ -291,6 +291,11 @@ namespace wc {
 				SetDlgItemText(dlg, IDC_STATICREMOTEINFO, app->m_inAddress.c_str());
 				SendDlgItemMessage(dlg, IDC_EDITSCREENNAME, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"User"));
 
+				//Get the attention of the user
+				FLASHWINFO fw = { .cbSize = sizeof(fw), .hwnd = GetParent(dlg), .dwFlags = FLASHW_TRAY | FLASHW_TIMERNOFG };
+				FlashWindowEx(&fw);
+				MessageBeep(MB_OK);
+
 				return TRUE;
 			}
 
