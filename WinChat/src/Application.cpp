@@ -230,9 +230,11 @@ namespace wc {
 						return TRUE;
 					}
 
-					case ID_HELP_ABOUT:
-						MessageBox(dlg, std::format(L"{} {}\nGrayson Riffe 2023", app->m_appName, app->m_appVersion).c_str(), L"About", MB_OK);
+					case ID_HELP_ABOUT: {
+						std::wstring aboutStr = L"{} {}\nCopyright Grayson Riffe 2023\ngraysonriffe.com";
+						MessageBox(dlg, std::vformat(aboutStr, std::make_wformat_args(app->m_appName, app->m_appVersion)).c_str(), L"About", MB_OK);
 						return TRUE;
+					}
 
 					case IDC_BUTTONEXIT:
 					case ID_FILE_EXIT:
